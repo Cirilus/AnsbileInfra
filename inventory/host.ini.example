@@ -1,0 +1,2 @@
+[servers]
+ip ansible_connection=ssh ansible_ssh_user= ansible_ssh_pass=
