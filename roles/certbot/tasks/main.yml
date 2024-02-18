@@ -1,0 +1,22 @@
+- name: Update apt packages
+  apt:
+    upgrade: yes
+    update_cache: yes
+    force_apt_get: yes
+
+- name: Installing certbot
+  apt:
+    name:
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    update_cache: true
+
+- name: Stop nginx service
+  systemd:
+    name: nginx
+    state: stopped
+  become: true
+
+- name: Creating certs
+  command: certbot certonly --non-interactive --agree-tos --nginx --email {{ email }} -d {{ domain_name }}
