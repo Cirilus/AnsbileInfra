@@ -20,3 +20,6 @@
 
 - name: Creating certs
   command: certbot certonly --non-interactive --agree-tos --nginx --email {{ email }} -d {{ domain_name }}
+
+- name: Killing nginx
+  command: pkill nginx

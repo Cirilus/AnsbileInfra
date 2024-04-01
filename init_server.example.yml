@@ -1,4 +1,5 @@
 - hosts: servers
   roles:
     - role: docker
+    - role: nvidia_docker_runtime
     - { role: certbot, domain_name: '', email: ''}
