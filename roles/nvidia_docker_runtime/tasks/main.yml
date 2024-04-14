@@ -1,3 +1,6 @@
+- name: test
+  include_tasks: nvidia-driver.yml
+
 - name: Check NVIDIA GPU status
   command: nvidia-smi
   register: nvidia_smi_output
@@ -12,14 +15,18 @@
     msg: "No NVIDIA GPU detected"
   when: nvidia_smi_output.rc != 0
 
-- name: Setting Up the repositories and keyrings
-  shell: |
-    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-    && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-  args:
-    warn: false
+- name: add key
+  apt_key:
+    url: https://nvidia.github.io/nvidia-docker/gpgkey
+    state: present
+
+- name: add repo
+  get_url:
+    url: https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list
+    dest: /etc/apt/sources.list.d/nvidia-docker.list
+    mode: 0644
+    owner: root
+    group: root
 
 - name: Update apt packages
   apt:
