@@ -1,18 +1,15 @@
-- name: test
-  include_tasks: nvidia-driver.yml
-
 - name: Check NVIDIA GPU status
   command: nvidia-smi
   register: nvidia_smi_output
   ignore_errors: yes
 
-- name: Print NVIDIA GPU status
+- name: Display NVIDIA driver information
   debug:
-    msg: "{{ nvidia_smi_output.stdout_lines }}"
+    var: nvidia_smi_output.stdout
+  when: nvidia_smi_output.rc == 0
 
-- name: Check if NVIDIA GPU is available
-  fail:
-    msg: "No NVIDIA GPU detected"
+- name: Include tasks to install NVIDIA drivers if not present
+  include_tasks: nvidia-driver.yml
   when: nvidia_smi_output.rc != 0
 
 - name: add key
