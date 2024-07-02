@@ -37,6 +37,12 @@
     state: present
     update_cache: yes
 
+- name: Install CUDA
+  apt:
+    name: nvidia-cuda-toolkit
+    state: present
+    update_cache: yes
+
 - name: Reload Docker service
   systemd:
     name: docker
