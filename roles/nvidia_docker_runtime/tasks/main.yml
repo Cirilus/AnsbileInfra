@@ -2,11 +2,13 @@
   command: nvidia-smi
   register: nvidia_smi_output
   ignore_errors: yes
+  become: true
 
 - name: Display NVIDIA driver information
   debug:
     var: nvidia_smi_output.stdout
   when: nvidia_smi_output.rc == 0
+  become: true
 
 - name: Include tasks to install NVIDIA drivers if not present
   include_tasks: nvidia-driver.yml
@@ -16,6 +18,7 @@
   apt_key:
     url: https://nvidia.github.io/nvidia-docker/gpgkey
     state: present
+  become: true
 
 - name: add repo
   get_url:
@@ -24,29 +27,32 @@
     mode: 0644
     owner: root
     group: root
+  become: true
 
 - name: Update apt packages
   apt:
     upgrade: yes
     update_cache: yes
     force_apt_get: yes
+  become: true
 
 - name: Install NVIDIA Container Runtime
   apt:
     name: nvidia-container-runtime
     state: present
     update_cache: yes
+  become: true
 
 - name: Install CUDA
   apt:
     name: nvidia-cuda-toolkit
     state: present
     update_cache: yes
+  become: true
 
 - name: Reload Docker service
   systemd:
     name: docker
     state: restarted
     daemon_reload: yes
-
-
+  become: true

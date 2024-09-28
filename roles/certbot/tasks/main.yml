@@ -3,6 +3,7 @@
     upgrade: yes
     update_cache: yes
     force_apt_get: yes
+  become: true
 
 - name: Installing certbot
   apt:
@@ -11,6 +12,7 @@
       - python3-certbot-nginx
     state: present
     update_cache: true
+  become: true
 
 - name: Stop nginx service
   systemd:
@@ -20,7 +22,9 @@
 
 - name: Creating certs
   command: certbot certonly --non-interactive --agree-tos --nginx --email {{ email }} -d {{ domain_name }}
+  become: true
 
 - name: Killing nginx
   command: pkill nginx
   ignore_errors: true
+  become: true
