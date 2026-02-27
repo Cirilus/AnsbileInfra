@@ -7,3 +7,9 @@
       ssh_key_configure_enabled: true
       ssh_key_src: "~/.ssh/git_deploy_key"
       ssh_key_path: "~/.ssh/git_deploy_key"
+      ssh_key_configure_ssh_config_enabled: true
+      ssh_key_configure_ssh_config_path: "~/.ssh/config"
+      ssh_key_configure_ssh_config_host: "github.com"
+      ssh_key_configure_ssh_config_host_name: "github.com"
+      ssh_key_configure_ssh_config_user: "git"
+      ssh_key_configure_ssh_config_identities_only: true

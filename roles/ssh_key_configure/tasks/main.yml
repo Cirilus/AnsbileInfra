@@ -24,3 +24,30 @@
   become: "{{ ssh_key_configure_become | bool }}"
   no_log: true
   when: ssh_key_configure_enabled | bool
+
+- name: Ensure SSH directory exists for config
+  ansible.builtin.file:
+    path: "{{ ssh_key_configure_ssh_config_path | dirname }}"
+    state: directory
+    mode: "0700"
+  become: "{{ ssh_key_configure_become | bool }}"
+  when:
+    - ssh_key_configure_enabled | bool
+    - ssh_key_configure_ssh_config_enabled | bool
+
+- name: Ensure SSH config has key host block
+  ansible.builtin.blockinfile:
+    path: "{{ ssh_key_configure_ssh_config_path }}"
+    create: true
+    mode: "0600"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK ssh_key_configure {{ ssh_key_configure_ssh_config_host }}"
+    block: |
+      Host {{ ssh_key_configure_ssh_config_host }}
+        HostName {{ ssh_key_configure_ssh_config_host_name }}
+        User {{ ssh_key_configure_ssh_config_user }}
+        IdentityFile {{ ssh_key_path }}
+        IdentitiesOnly {{ 'yes' if ssh_key_configure_ssh_config_identities_only | bool else 'no' }}
+  become: "{{ ssh_key_configure_become | bool }}"
+  when:
+    - ssh_key_configure_enabled | bool
+    - ssh_key_configure_ssh_config_enabled | bool
