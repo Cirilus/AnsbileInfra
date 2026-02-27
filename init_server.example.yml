@@ -3,3 +3,7 @@
     - role: docker
     - role: nvidia_docker_runtime
     - { role: certbot, domain_name: '', email: ''}
+    - role: ssh_key_configure
+      ssh_key_configure_enabled: true
+      ssh_key_src: "~/.ssh/git_deploy_key"
+      ssh_key_path: "~/.ssh/git_deploy_key"

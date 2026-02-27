@@ -1,0 +1,26 @@
+---
+- name: Validate SSH key copy parameters
+  ansible.builtin.assert:
+    that:
+      - ssh_key_src | length > 0
+      - ssh_key_path | length > 0
+    fail_msg: >-
+      Set ssh_key_src and ssh_key_path when ssh_key_configure_enabled=true.
+  when: ssh_key_configure_enabled | bool
+
+- name: Ensure SSH directory exists for key
+  ansible.builtin.file:
+    path: "{{ ssh_key_path | dirname }}"
+    state: directory
+    mode: "0700"
+  become: "{{ ssh_key_configure_become | bool }}"
+  when: ssh_key_configure_enabled | bool
+
+- name: Copy SSH private key to target machine
+  ansible.builtin.copy:
+    src: "{{ ssh_key_src }}"
+    dest: "{{ ssh_key_path }}"
+    mode: "0600"
+  become: "{{ ssh_key_configure_become | bool }}"
+  no_log: true
+  when: ssh_key_configure_enabled | bool

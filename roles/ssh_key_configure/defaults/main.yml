@@ -1,0 +1,5 @@
+---
+ssh_key_configure_enabled: false
+ssh_key_configure_become: false
+ssh_key_src: ""
+ssh_key_path: "~/.ssh/id_rsa_git"
