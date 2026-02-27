@@ -1,58 +1,39 @@
+---
 - name: Check NVIDIA GPU status
-  command: nvidia-smi
+  ansible.builtin.command: nvidia-smi
   register: nvidia_smi_output
-  ignore_errors: yes
+  changed_when: false
+  failed_when: false
   become: true
 
-- name: Display NVIDIA driver information
-  debug:
-    var: nvidia_smi_output.stdout
-  when: nvidia_smi_output.rc == 0
-  become: true
+- name: Install NVIDIA drivers if not present
+  ansible.builtin.include_tasks: nvidia-driver.yml
+  when:
+    - nvidia_install_driver_if_missing | bool
+    - nvidia_smi_output.rc != 0
 
-- name: Include tasks to install NVIDIA drivers if not present
-  include_tasks: nvidia-driver.yml
-  when: nvidia_smi_output.rc != 0
-
-- name: add key
-  apt_key:
+- name: Add NVIDIA docker apt key
+  ansible.builtin.apt_key:
     url: https://nvidia.github.io/nvidia-docker/gpgkey
     state: present
   become: true
 
-- name: add repo
-  get_url:
+- name: Add NVIDIA container toolkit repository
+  ansible.builtin.get_url:
     url: https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list
-    dest: /etc/apt/sources.list.d/nvidia-docker.list
-    mode: 0644
+    dest: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    mode: "0644"
     owner: root
     group: root
   become: true
 
-- name: Update apt packages
-  apt:
-    upgrade: yes
-    update_cache: yes
-    force_apt_get: yes
-  become: true
-
-- name: Install NVIDIA Container Runtime
-  apt:
-    name: nvidia-container-runtime
+- name: Install NVIDIA container packages
+  ansible.builtin.apt:
+    name:
+      - nvidia-container-runtime
+      - nvidia-cuda-toolkit
     state: present
-    update_cache: yes
+    update_cache: true
+    cache_valid_time: 3600
   become: true
-
-- name: Install CUDA
-  apt:
-    name: nvidia-cuda-toolkit
-    state: present
-    update_cache: yes
-  become: true
-
-- name: Reload Docker service
-  systemd:
-    name: docker
-    state: restarted
-    daemon_reload: yes
-  become: true
+  notify: Restart docker

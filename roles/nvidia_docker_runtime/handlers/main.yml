@@ -1,2 +1,6 @@
 ---
-# handlers file for nvidia_docker_runtime
+- name: Restart docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+  become: true
