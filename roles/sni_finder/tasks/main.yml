@@ -1,0 +1,331 @@
+---
+- name: Validate target IP for sni_finder
+  ansible.builtin.assert:
+    that:
+      - sni_finder_target_ip | length > 0
+      - sni_finder_target_ip is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}$')
+    fail_msg: >-
+      sni_finder_target_ip must be an IPv4 address. Resolved value:
+      {{ sni_finder_target_ip | default('<undefined>') }}.
+      Set ansible_host to the VPS IP or pass sni_finder_target_ip explicitly.
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Ensure sni_finder workspace exists
+  ansible.builtin.file:
+    path: "{{ sni_finder_workspace }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Download official sni-finder runner
+  ansible.builtin.get_url:
+    url: "{{ sni_finder_install_script_url }}"
+    dest: "{{ sni_finder_install_script_path }}"
+    mode: "0755"
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Check existing sni-finder binaries
+  ansible.builtin.find:
+    paths: "{{ sni_finder_workspace }}"
+    patterns: "sni-finder-*-*"
+    file_type: file
+    recurse: false
+  register: sni_finder_existing_binaries
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Download sni-finder release binary
+  ansible.builtin.command:
+    cmd: bash "{{ sni_finder_install_script_path }}"
+    chdir: "{{ sni_finder_workspace }}"
+  register: sni_finder_install_result
+  when: sni_finder_force_install | bool or sni_finder_existing_binaries.matched == 0
+  changed_when: true
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Show sni-finder install output
+  ansible.builtin.debug:
+    var: sni_finder_install_result.stdout_lines
+  when:
+    - sni_finder_show_install_output | bool
+    - sni_finder_install_result is defined
+    - sni_finder_install_result.stdout_lines is defined
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Refresh sni-finder binary list
+  ansible.builtin.find:
+    paths: "{{ sni_finder_workspace }}"
+    patterns: "sni-finder-*-*"
+    file_type: file
+    recurse: false
+  register: sni_finder_binary_files
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Ensure sni-finder binary is available
+  ansible.builtin.assert:
+    that:
+      - sni_finder_binary_files.matched > 0
+    fail_msg: "sni-finder binary was not downloaded successfully."
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Select sni-finder binary path
+  ansible.builtin.set_fact:
+    sni_finder_binary_path: "{{ (sni_finder_binary_files.files | map(attribute='path') | sort | first) }}"
+  tags:
+    - never
+    - sni_finder
+
+- name: Install SNI ranking helper
+  ansible.builtin.copy:
+    dest: "{{ sni_finder_rank_script_path }}"
+    mode: "0755"
+    content: |
+      #!/usr/bin/env python3
+      import argparse
+      import json
+      import socket
+      import ssl
+      import time
+
+
+      def unique_domains(path):
+          domains = []
+          seen = set()
+          with open(path, "r", encoding="utf-8") as handle:
+              for raw_line in handle:
+                  domain = raw_line.strip()
+                  if domain and domain not in seen:
+                      domains.append(domain)
+                      seen.add(domain)
+          return domains
+
+
+      def measure(domain, port, timeout):
+          started = time.perf_counter()
+          context = ssl.create_default_context()
+          context.check_hostname = False
+          context.verify_mode = ssl.CERT_NONE
+          context.set_alpn_protocols(["h2", "http/1.1"])
+          with socket.create_connection((domain, port), timeout=timeout) as sock:
+              with context.wrap_socket(sock, server_hostname=domain):
+                  elapsed_ms = (time.perf_counter() - started) * 1000
+                  return True, round(elapsed_ms, 2)
+
+
+      def main():
+          parser = argparse.ArgumentParser()
+          parser.add_argument("--input", required=True)
+          parser.add_argument("--port", type=int, default=443)
+          parser.add_argument("--timeout", type=float, default=5.0)
+          parser.add_argument("--top", type=int, default=10)
+          args = parser.parse_args()
+
+          domains = unique_domains(args.input)
+          results = []
+          for domain in domains:
+              try:
+                  ok, elapsed_ms = measure(domain, args.port, args.timeout)
+              except Exception:
+                  continue
+              if ok:
+                  results.append({"domain": domain, "elapsed_ms": elapsed_ms})
+
+          results.sort(key=lambda item: item["elapsed_ms"])
+          best = min(results, key=lambda item: item["elapsed_ms"]) if results else None
+          print(json.dumps({
+              "tested": len(domains),
+              "successful": len(results),
+              "best_domain": best["domain"] if best else "",
+              "best_elapsed_ms": best["elapsed_ms"] if best else None,
+              "top_results": results[: max(args.top, 0)],
+          }))
+
+
+      if __name__ == "__main__":
+          main()
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Remove previous sni-finder result files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ sni_finder_results_path }}"
+    - "{{ sni_finder_domains_path }}"
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Ensure sni_finder workspace exists before scan
+  ansible.builtin.file:
+    path: "{{ sni_finder_workspace }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Run sni-finder against server IP
+  ansible.builtin.command:
+    argv:
+      - "{{ sni_finder_binary_path }}"
+      - -addr
+      - "{{ sni_finder_target_ip }}"
+      - -port
+      - "{{ sni_finder_port | string }}"
+      - -thread
+      - "{{ sni_finder_threads | string }}"
+      - -timeOut
+      - "{{ sni_finder_timeout | string }}"
+    chdir: "{{ sni_finder_workspace }}"
+  register: sni_finder_scan_result
+  changed_when: false
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Show sni-finder scan output
+  ansible.builtin.debug:
+    var: sni_finder_scan_result.stdout_lines
+  when:
+    - sni_finder_show_scan_output | bool
+    - sni_finder_scan_result.stdout_lines is defined
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Check sni-finder domains output
+  ansible.builtin.stat:
+    path: "{{ sni_finder_domains_path }}"
+  register: sni_finder_domains_stat
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Read sni-finder domains output
+  ansible.builtin.slurp:
+    src: "{{ sni_finder_domains_path }}"
+  register: sni_finder_domains_raw
+  when: sni_finder_domains_stat.stat.exists
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Prepare unique SNI candidates
+  ansible.builtin.set_fact:
+    sni_finder_candidates: >-
+      {{
+        (sni_finder_domains_raw.content | b64decode).splitlines()
+        | reject('equalto', '')
+        | unique
+        | list
+      }}
+  when: sni_finder_domains_stat.stat.exists
+  tags:
+    - never
+    - sni_finder
+
+- name: Rank discovered SNI candidates
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ sni_finder_rank_script_path }}"
+      - --input
+      - "{{ sni_finder_domains_path }}"
+      - --port
+      - "{{ sni_finder_port | string }}"
+      - --timeout
+      - "{{ sni_finder_rank_timeout | string }}"
+      - --top
+      - "{{ sni_finder_top_count | string }}"
+  register: sni_finder_rank_result
+  when:
+    - sni_finder_candidates | default([]) | length > 0
+  changed_when: false
+  delegate_to: localhost
+  tags:
+    - never
+    - sni_finder
+
+- name: Parse ranked SNI result
+  ansible.builtin.set_fact:
+    sni_finder_rank_data: "{{ sni_finder_rank_result.stdout | from_json }}"
+  when:
+    - sni_finder_rank_result is defined
+    - sni_finder_rank_result.stdout is defined
+    - sni_finder_rank_result.stdout | length > 0
+  tags:
+    - never
+    - sni_finder
+
+- name: Show best SNI candidate
+  ansible.builtin.debug:
+    msg: >-
+      Best SNI candidate for {{ inventory_hostname }} ({{ sni_finder_target_ip }}):
+      {{ sni_finder_rank_data.best_domain }}
+      with TLS handshake {{ sni_finder_rank_data.best_elapsed_ms }} ms.
+  when:
+    - sni_finder_rank_data is defined
+    - sni_finder_rank_data.best_domain | length > 0
+  tags:
+    - never
+    - sni_finder
+
+- name: Show top SNI candidates
+  ansible.builtin.debug:
+    msg: |-
+      Top {{ sni_finder_rank_data.top_results | length }} SNI candidates for {{ inventory_hostname }} ({{ sni_finder_target_ip }}):
+      {% for item in sni_finder_rank_data.top_results %}
+      {{ loop.index }}. {{ item.domain }} - {{ item.elapsed_ms }} ms
+      {% endfor %}
+  when:
+    - sni_finder_rank_data is defined
+    - sni_finder_rank_data.top_results is defined
+    - sni_finder_rank_data.top_results | length > 0
+  tags:
+    - never
+    - sni_finder
+
+- name: Show missing SNI candidates
+  ansible.builtin.debug:
+    msg: >-
+      sni-finder did not discover any usable SNI candidates for
+      {{ inventory_hostname }} ({{ sni_finder_target_ip }}).
+  when: >-
+    sni_finder_rank_data is not defined
+    or sni_finder_rank_data.best_domain | default('') | length == 0
+  tags:
+    - never
+    - sni_finder

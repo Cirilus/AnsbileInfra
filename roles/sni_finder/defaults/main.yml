@@ -1,0 +1,17 @@
+---
+sni_finder_install_script_url: https://raw.githubusercontent.com/hawshemi/SNI-Finder/main/sni-finder-run.sh
+sni_finder_workspace_root: "{{ playbook_dir }}/.artifacts/sni_finder"
+sni_finder_workspace: "{{ sni_finder_workspace_root }}/{{ inventory_hostname }}"
+sni_finder_install_script_path: "{{ sni_finder_workspace }}/sni-finder-run.sh"
+sni_finder_results_path: "{{ sni_finder_workspace }}/results.txt"
+sni_finder_domains_path: "{{ sni_finder_workspace }}/domains.txt"
+sni_finder_rank_script_path: "{{ sni_finder_workspace }}/rank_sni_candidates.py"
+sni_finder_target_ip: "{{ (inventory_hostname if (inventory_hostname | trim) is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}$') else (ansible_host | default(ansible_facts.get('default_ipv4', {}).get('address', '')))) | trim }}"
+sni_finder_port: 443
+sni_finder_threads: 128
+sni_finder_timeout: 4
+sni_finder_rank_timeout: 5
+sni_finder_top_count: 10
+sni_finder_force_install: false
+sni_finder_show_install_output: true
+sni_finder_show_scan_output: true

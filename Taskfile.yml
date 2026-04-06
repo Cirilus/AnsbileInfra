@@ -1,0 +1,36 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Run the default Ansible playbook
+    cmds:
+      - task: run
+
+  run:
+    desc: Run init_server.yml, optionally with TAGS=<tag1,tag2>
+    vars:
+      PLAYBOOK: '{{.PLAYBOOK | default "init_server.yml"}}'
+      TAGS: '{{.TAGS | default ""}}'
+    cmds:
+      - cmd: >-
+          if [ -n "{{.TAGS}}" ]; then
+            ansible-playbook {{.PLAYBOOK}} --tags "{{.TAGS}}";
+          else
+            ansible-playbook {{.PLAYBOOK}};
+          fi
+
+  sni:
+    desc: Run only the sni_finder role
+    cmds:
+      - task: run
+        vars:
+          TAGS: sni_finder
+
+  new:
+    desc: Create a new Ansible role with ansible-galaxy role init name=<role_name>
+    preconditions:
+      - sh: test -n "{{.name}}"
+        msg: Pass the role name via task new name=<role_name>
+    cmds:
+      - cmd: ansible-galaxy role init "{{.name}}"
+        dir: /Users/kirillskolenko/Work/pet-projects/AnsbileInfra/roles

@@ -1,10 +1,12 @@
 - hosts: servers
   roles:
-    - role: docker
+    - role: three_x_ui
+      three_x_ui_port: 2000
+    - role: sni_finder
     - role: nvidia_docker_runtime
     - role: certbot
-      domain_name: ''
-      email: ''
+      domain_name: ""
+      email: ""
     - role: ssh_key_configure
       ssh_key_configure_enabled: true
       ssh_key_src: "~/.ssh/git_deploy_key"

@@ -1,0 +1,44 @@
+---
+three_x_ui_arch_map:
+  x86_64: amd64
+  amd64: amd64
+  i386: 386
+  i686: 386
+  arm64: arm64
+  aarch64: arm64
+  armv7l: armv7
+  armv6l: armv6
+  armv5l: armv5
+  s390x: s390x
+
+three_x_ui_arch: "{{ three_x_ui_arch_map.get(ansible_architecture, 'amd64') }}"
+three_x_ui_release_dir: /usr/local/src/3x-ui-release
+three_x_ui_extract_dir: "{{ three_x_ui_release_dir }}/x-ui"
+three_x_ui_archive_path: "{{ three_x_ui_release_dir }}/x-ui-linux-{{ three_x_ui_arch }}.tar.gz"
+three_x_ui_service_path: /etc/systemd/system/x-ui.service
+three_x_ui_binary_path: /usr/local/x-ui/x-ui
+three_x_ui_cli_path: /usr/bin/x-ui
+three_x_ui_service_name: x-ui
+three_x_ui_version: ""
+three_x_ui_force_install: false
+three_x_ui_credentials_dir: "{{ playbook_dir }}/.artifacts/three_x_ui/{{ inventory_hostname }}"
+three_x_ui_generated_username_file: "{{ three_x_ui_credentials_dir }}/username.txt"
+three_x_ui_generated_password_file: "{{ three_x_ui_credentials_dir }}/password.txt"
+three_x_ui_generated_web_base_path_file: "{{ three_x_ui_credentials_dir }}/web_base_path.txt"
+three_x_ui_generated_username_prefix: xui
+three_x_ui_generated_username_suffix_length: 7
+three_x_ui_generated_password_length: 10
+three_x_ui_generated_web_base_path_length: 16
+three_x_ui_show_current_settings: true
+three_x_ui_show_version: true
+three_x_ui_port: ""
+three_x_ui_username: ""
+three_x_ui_password: ""
+three_x_ui_reset_two_factor: true
+three_x_ui_web_base_path: ""
+three_x_ui_release_url: >-
+  {{
+    'https://github.com/MHSanaei/3x-ui/releases/latest/download/x-ui-linux-' ~ three_x_ui_arch ~ '.tar.gz'
+    if three_x_ui_version | length == 0
+    else 'https://github.com/MHSanaei/3x-ui/releases/download/' ~ three_x_ui_version ~ '/x-ui-linux-' ~ three_x_ui_arch ~ '.tar.gz'
+  }}

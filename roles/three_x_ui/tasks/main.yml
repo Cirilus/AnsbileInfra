@@ -1,0 +1,463 @@
+---
+- name: Validate supported operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+    fail_msg: "three_x_ui role currently supports Ubuntu hosts only."
+
+- name: Install minimal prerequisites for 3x-ui installer
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - tar
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: Ensure 3x-ui release directory exists
+  ansible.builtin.file:
+    path: "{{ three_x_ui_release_dir }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Check installed 3x-ui version
+  ansible.builtin.command:
+    argv:
+      - "{{ three_x_ui_binary_path }}"
+      - -v
+  register: three_x_ui_version_check
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Check installed 3x-ui systemd unit
+  ansible.builtin.stat:
+    path: "{{ three_x_ui_service_path }}"
+  register: three_x_ui_service_unit_stat
+  become: true
+
+- name: Decide whether 3x-ui installation is required
+  ansible.builtin.set_fact:
+    three_x_ui_install_required: >-
+      {{
+        (three_x_ui_force_install | bool)
+        or three_x_ui_version_check.rc != 0
+        or not three_x_ui_service_unit_stat.stat.exists
+        or (
+          (three_x_ui_version | length > 0)
+          and (three_x_ui_version not in (three_x_ui_version_check.stdout | default('')))
+        )
+      }}
+
+- name: Download 3x-ui release archive
+  ansible.builtin.get_url:
+    url: "{{ three_x_ui_release_url }}"
+    dest: "{{ three_x_ui_archive_path }}"
+    mode: "0644"
+  when: three_x_ui_install_required
+  become: true
+
+- name: Remove previous extracted 3x-ui files
+  ansible.builtin.file:
+    path: "{{ three_x_ui_extract_dir }}"
+    state: absent
+  when: three_x_ui_install_required
+  become: true
+
+- name: Unpack 3x-ui release archive
+  ansible.builtin.unarchive:
+    src: "{{ three_x_ui_archive_path }}"
+    dest: "{{ three_x_ui_release_dir }}"
+    remote_src: true
+  when: three_x_ui_install_required
+  become: true
+
+- name: Ensure 3x-ui binaries are executable
+  ansible.builtin.command:
+    argv:
+      - chmod
+      - +x
+      - "{{ item }}"
+  loop:
+    - "{{ three_x_ui_extract_dir }}/x-ui"
+    - "{{ three_x_ui_extract_dir }}/x-ui.sh"
+  when: three_x_ui_install_required
+  changed_when: true
+  become: true
+
+- name: Ensure xray helper binaries are executable
+  ansible.builtin.shell:
+    cmd: chmod +x {{ three_x_ui_extract_dir }}/bin/xray-linux-*
+  when: three_x_ui_install_required
+  changed_when: true
+  become: true
+
+- name: Remove previous installed 3x-ui directory
+  ansible.builtin.file:
+    path: /usr/local/x-ui
+    state: absent
+  when: three_x_ui_install_required
+  become: true
+
+- name: Install 3x-ui files into /usr/local
+  ansible.builtin.command:
+    argv:
+      - mv
+      - "{{ three_x_ui_extract_dir }}"
+      - /usr/local/x-ui
+  when: three_x_ui_install_required
+  changed_when: true
+  become: true
+
+- name: Install 3x-ui CLI wrapper
+  ansible.builtin.copy:
+    src: /usr/local/x-ui/x-ui.sh
+    dest: "{{ three_x_ui_cli_path }}"
+    remote_src: true
+    mode: "0755"
+  when: three_x_ui_install_required
+  become: true
+
+- name: Install 3x-ui systemd service
+  ansible.builtin.copy:
+    src: /usr/local/x-ui/x-ui.service.debian
+    dest: "{{ three_x_ui_service_path }}"
+    remote_src: true
+    mode: "0644"
+  when: three_x_ui_install_required
+  become: true
+
+- name: Ensure 3x-ui service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ three_x_ui_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+
+- name: Ensure local credentials artifact directory exists
+  ansible.builtin.file:
+    path: "{{ three_x_ui_credentials_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+
+- name: Check generated 3x-ui username file
+  ansible.builtin.stat:
+    path: "{{ three_x_ui_generated_username_file }}"
+  register: three_x_ui_generated_username_stat
+  delegate_to: localhost
+
+- name: Read existing generated 3x-ui username
+  ansible.builtin.set_fact:
+    three_x_ui_existing_generated_username: "{{ lookup('file', three_x_ui_generated_username_file).strip() }}"
+  when:
+    - three_x_ui_username | length == 0
+    - three_x_ui_generated_username_stat.stat.exists
+
+- name: Validate existing generated 3x-ui username
+  ansible.builtin.set_fact:
+    three_x_ui_generated_username_is_valid: >-
+      {{
+        (three_x_ui_existing_generated_username | default(''))
+        is match('^' ~ three_x_ui_generated_username_prefix ~ '[a-z0-9]{' ~ (three_x_ui_generated_username_suffix_length | string) ~ '}$')
+      }}
+  when:
+    - three_x_ui_username | length == 0
+    - three_x_ui_generated_username_stat.stat.exists
+
+- name: Generate 3x-ui username
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import secrets, string;
+        alphabet = string.ascii_lowercase + string.digits;
+        print("{{ three_x_ui_generated_username_prefix }}" + "".join(secrets.choice(alphabet) for _ in range({{ three_x_ui_generated_username_suffix_length }})))
+  register: three_x_ui_generated_username
+  when:
+    - three_x_ui_username | length == 0
+    - >-
+      (not three_x_ui_generated_username_stat.stat.exists)
+      or not (three_x_ui_generated_username_is_valid | default(false) | bool)
+  changed_when: true
+  delegate_to: localhost
+
+- name: Persist generated 3x-ui username
+  ansible.builtin.copy:
+    content: "{{ three_x_ui_generated_username.stdout ~ '\n' }}"
+    dest: "{{ three_x_ui_generated_username_file }}"
+    mode: "0600"
+  when:
+    - three_x_ui_username | length == 0
+    - >-
+      (not three_x_ui_generated_username_stat.stat.exists)
+      or not (three_x_ui_generated_username_is_valid | default(false) | bool)
+  delegate_to: localhost
+
+- name: Check generated 3x-ui password file
+  ansible.builtin.stat:
+    path: "{{ three_x_ui_generated_password_file }}"
+  register: three_x_ui_generated_password_stat
+  delegate_to: localhost
+
+- name: Read existing generated 3x-ui password
+  ansible.builtin.set_fact:
+    three_x_ui_existing_generated_password: "{{ lookup('file', three_x_ui_generated_password_file).strip() }}"
+  when:
+    - three_x_ui_password | length == 0
+    - three_x_ui_generated_password_stat.stat.exists
+
+- name: Validate existing generated 3x-ui password
+  ansible.builtin.set_fact:
+    three_x_ui_generated_password_is_valid: >-
+      {{
+        (three_x_ui_existing_generated_password | default(''))
+        is match('^[A-Za-z0-9]{' ~ (three_x_ui_generated_password_length | string) ~ '}$')
+      }}
+  when:
+    - three_x_ui_password | length == 0
+    - three_x_ui_generated_password_stat.stat.exists
+
+- name: Generate 3x-ui password
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import secrets, string;
+        alphabet = string.ascii_letters + string.digits;
+        print("".join(secrets.choice(alphabet) for _ in range({{ three_x_ui_generated_password_length }})))
+  register: three_x_ui_generated_password
+  when:
+    - three_x_ui_password | length == 0
+    - >-
+      (not three_x_ui_generated_password_stat.stat.exists)
+      or not (three_x_ui_generated_password_is_valid | default(false) | bool)
+  changed_when: true
+  delegate_to: localhost
+
+- name: Persist generated 3x-ui password
+  ansible.builtin.copy:
+    content: "{{ three_x_ui_generated_password.stdout ~ '\n' }}"
+    dest: "{{ three_x_ui_generated_password_file }}"
+    mode: "0600"
+  when:
+    - three_x_ui_password | length == 0
+    - >-
+      (not three_x_ui_generated_password_stat.stat.exists)
+      or not (three_x_ui_generated_password_is_valid | default(false) | bool)
+  delegate_to: localhost
+
+- name: Check generated 3x-ui web base path file
+  ansible.builtin.stat:
+    path: "{{ three_x_ui_generated_web_base_path_file }}"
+  register: three_x_ui_generated_web_base_path_stat
+  delegate_to: localhost
+
+- name: Generate 3x-ui web base path
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import secrets, string;
+        alphabet = string.ascii_lowercase + string.digits;
+        print("/" + "".join(secrets.choice(alphabet) for _ in range({{ three_x_ui_generated_web_base_path_length }})) + "/")
+  register: three_x_ui_generated_web_base_path
+  when:
+    - three_x_ui_web_base_path in ['', '/']
+    - not three_x_ui_generated_web_base_path_stat.stat.exists
+  changed_when: true
+  delegate_to: localhost
+
+- name: Persist generated 3x-ui web base path
+  ansible.builtin.copy:
+    content: "{{ three_x_ui_generated_web_base_path.stdout ~ '\n' }}"
+    dest: "{{ three_x_ui_generated_web_base_path_file }}"
+    mode: "0600"
+  when:
+    - three_x_ui_web_base_path in ['', '/']
+    - not three_x_ui_generated_web_base_path_stat.stat.exists
+  delegate_to: localhost
+
+- name: Resolve effective 3x-ui credentials
+  ansible.builtin.set_fact:
+    three_x_ui_effective_port: "{{ three_x_ui_port | string if three_x_ui_port is not none else '' }}"
+    three_x_ui_effective_username: >-
+      {{
+        three_x_ui_username
+        if three_x_ui_username | length > 0
+        else lookup('file', three_x_ui_generated_username_file).strip()
+      }}
+    three_x_ui_effective_password: >-
+      {{
+        three_x_ui_password
+        if three_x_ui_password | length > 0
+        else lookup('file', three_x_ui_generated_password_file).strip()
+      }}
+    three_x_ui_effective_web_base_path: >-
+      {{
+        three_x_ui_web_base_path
+        if three_x_ui_web_base_path not in ['', '/']
+        else lookup('file', three_x_ui_generated_web_base_path_file).strip()
+      }}
+    three_x_ui_credentials_should_apply: >-
+      {{
+        (three_x_ui_install_required | bool)
+        or (three_x_ui_generated_username is defined and three_x_ui_generated_username.changed)
+        or (three_x_ui_generated_password is defined and three_x_ui_generated_password.changed)
+        or (three_x_ui_username | length > 0 and three_x_ui_password | length > 0)
+      }}
+    three_x_ui_web_base_path_should_apply: >-
+      {{
+        (three_x_ui_install_required | bool)
+        or (three_x_ui_generated_web_base_path is defined and three_x_ui_generated_web_base_path.changed)
+        or (three_x_ui_web_base_path not in ['', '/'])
+      }}
+
+- name: Configure 3x-ui panel port
+  ansible.builtin.command:
+    argv:
+      - "{{ three_x_ui_binary_path }}"
+      - setting
+      - -port
+      - "{{ three_x_ui_effective_port }}"
+  when: three_x_ui_effective_port | length > 0
+  changed_when: true
+  become: true
+
+- name: Configure 3x-ui credentials
+  ansible.builtin.command:
+    argv:
+      - "{{ three_x_ui_binary_path }}"
+      - setting
+      - -username
+      - "{{ three_x_ui_effective_username }}"
+      - -password
+      - "{{ three_x_ui_effective_password }}"
+      - -resetTwoFactor
+      - "{{ 'true' if three_x_ui_reset_two_factor | bool else 'false' }}"
+  when: three_x_ui_credentials_should_apply | bool
+  changed_when: true
+  become: true
+  no_log: true
+
+- name: Configure 3x-ui web base path
+  ansible.builtin.command:
+    argv:
+      - "{{ three_x_ui_binary_path }}"
+      - setting
+      - -webBasePath
+      - "{{ three_x_ui_effective_web_base_path }}"
+  when: three_x_ui_web_base_path_should_apply | bool
+  changed_when: true
+  become: true
+
+- name: Restart 3x-ui after CLI configuration
+  ansible.builtin.systemd:
+    name: "{{ three_x_ui_service_name }}"
+    state: restarted
+  when: >-
+    three_x_ui_effective_port | length > 0
+    or (three_x_ui_credentials_should_apply | bool)
+    or (three_x_ui_web_base_path_should_apply | bool)
+  become: true
+
+- name: Read installed 3x-ui version
+  ansible.builtin.command:
+    argv:
+      - "{{ three_x_ui_binary_path }}"
+      - -v
+  register: three_x_ui_installed_version
+  changed_when: false
+  become: true
+
+- name: Read current 3x-ui settings
+  ansible.builtin.command:
+    argv:
+      - "{{ three_x_ui_binary_path }}"
+      - setting
+      - -show
+  register: three_x_ui_settings
+  changed_when: false
+  become: true
+
+- name: Prepare 3x-ui summary data
+  ansible.builtin.set_fact:
+    three_x_ui_summary_host: "{{ ansible_host | default(ansible_default_ipv4.address) }}"
+    three_x_ui_summary_port: >-
+      {{
+        (
+          three_x_ui_settings.stdout_lines
+          | select('search', '^port: ')
+          | list
+          | first
+          | default('port: unknown')
+        ) | regex_replace('^port: ', '')
+      }}
+    three_x_ui_summary_web_base_path: >-
+      {{
+        (
+          three_x_ui_settings.stdout_lines
+          | select('search', '^webBasePath: ')
+          | list
+          | first
+          | default('webBasePath: ' ~ three_x_ui_effective_web_base_path)
+        ) | regex_replace('^webBasePath: ', '')
+      }}
+    three_x_ui_summary_has_default_credential: >-
+      {{
+        (
+          three_x_ui_settings.stdout_lines
+          | select('search', '^hasDefaultCredential: ')
+          | list
+          | first
+          | default('hasDefaultCredential: unknown')
+        ) | regex_replace('^hasDefaultCredential: ', '')
+      }}
+
+- name: Build 3x-ui summary payload
+  ansible.builtin.set_fact:
+    three_x_ui_summary:
+      host: "{{ three_x_ui_summary_host }}"
+      port: "{{ three_x_ui_summary_port }}"
+      panel_url: "http://{{ three_x_ui_summary_host }}:{{ three_x_ui_summary_port }}{{ three_x_ui_summary_web_base_path }}"
+      username: "{{ three_x_ui_effective_username }}"
+      password: "{{ three_x_ui_effective_password }}"
+      web_base_path: "{{ three_x_ui_summary_web_base_path }}"
+      has_default_credential: "{{ three_x_ui_summary_has_default_credential }}"
+      version: "{{ three_x_ui_installed_version.stdout | trim }}"
+      raw_settings: "{{ three_x_ui_settings.stdout_lines }}"
+
+- name: Build ordered 3x-ui summary lines
+  ansible.builtin.set_fact:
+    three_x_ui_summary_lines:
+      - "3x-ui summary for {{ inventory_hostname }}"
+      - "panel_url={{ three_x_ui_summary.panel_url }}"
+      - "username={{ three_x_ui_summary.username }}"
+      - "password={{ three_x_ui_summary.password }}"
+      - "host={{ three_x_ui_summary.host }}"
+      - "port={{ three_x_ui_summary.port }}"
+      - "web_base_path={{ three_x_ui_summary.web_base_path }}"
+      - "has_default_credential={{ three_x_ui_summary.has_default_credential }}"
+      - "version={{ three_x_ui_summary.version }}"
+
+- name: Ensure 3x-ui credentials are no longer default
+  ansible.builtin.assert:
+    that:
+      - three_x_ui_summary.has_default_credential != 'true'
+    fail_msg: >-
+      3x-ui still reports default credentials. The generated or provided
+      username/password were not applied successfully. Try logging in with
+      admin/admin on {{ three_x_ui_summary.panel_url }} and then rerun the role.
+  when: three_x_ui_credentials_should_apply | bool
+
+- name: Show 3x-ui final summary
+  ansible.builtin.debug:
+    msg: "{{ three_x_ui_summary_lines }}"
+  when: three_x_ui_show_current_settings | bool
