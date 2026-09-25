@@ -2,3 +2,5 @@
 inventory/hosts.ini
 inventory/remnawave.yml
 init_server.yml
+.omc
+.DS_Store
