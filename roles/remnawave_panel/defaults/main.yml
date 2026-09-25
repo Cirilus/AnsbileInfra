@@ -1,0 +1,39 @@
+---
+remnawave_panel_domain: ""
+remnawave_panel_expected_ipv4: "{{ ansible_host | default(ansible_default_ipv4.address | default('')) }}"
+remnawave_panel_acme_email: ""
+
+remnawave_panel_dir: /opt/remnawave
+remnawave_panel_secrets_dir: "{{ remnawave_panel_dir }}/.secrets"
+remnawave_panel_backend_image: remnawave/backend:3
+remnawave_panel_postgres_image: postgres:18.4
+remnawave_panel_valkey_image: valkey/valkey:9-alpine
+remnawave_panel_pull_images: true
+
+remnawave_panel_app_port: 3000
+remnawave_panel_metrics_port: 3001
+remnawave_panel_host_port: 3000
+remnawave_panel_metrics_host_port: 3001
+remnawave_panel_api_instances: 1
+
+remnawave_panel_postgres_user: postgres
+remnawave_panel_postgres_db: postgres
+remnawave_panel_postgres_password: ""
+
+remnawave_panel_app_secret: ""
+remnawave_panel_metrics_user: admin
+remnawave_panel_metrics_password: ""
+remnawave_panel_webhook_secret: ""
+
+remnawave_panel_short_uuid_method: nanoid
+remnawave_panel_short_uuid_length: 16
+remnawave_panel_frontend_domain: "{{ remnawave_panel_domain }}"
+remnawave_panel_subscription_public_domain: "{{ remnawave_panel_domain }}/api/sub"
+
+remnawave_panel_enable_telegram_notifications: false
+remnawave_panel_telegram_bot_token: change_me
+remnawave_panel_telegram_notify_users: change_me
+remnawave_panel_telegram_notify_nodes: change_me
+
+remnawave_panel_xray_ssl_dir: ""
+remnawave_panel_nginx_site_path: /etc/nginx/sites-available/remnawave.conf

@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#09271d">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>Kedr Works — сервис доступен</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #09271d;
+      --background-deep: #061d16;
+      --surface: #12382b;
+      --surface-border: #285140;
+      --text: #f4f1e8;
+      --muted: #aec3b7;
+      --accent: #8fcf72;
+      --accent-deep: #609d51;
+      --line: #426454;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--background-deep);
+    }
+
+    body {
+      min-width: 280px;
+      min-height: 100svh;
+      margin: 0;
+      overflow-x: hidden;
+      background: var(--background);
+      color: var(--text);
+    }
+
+    .page {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100svh;
+      overflow: hidden;
+    }
+
+    .contours {
+      position: absolute;
+      z-index: -1;
+      top: -8rem;
+      right: -13rem;
+      width: min(72rem, 88vw);
+      height: auto;
+      color: #6b9a7d;
+      opacity: .15;
+      pointer-events: none;
+    }
+
+    .container {
+      width: min(100% - 3rem, 84rem);
+      margin-inline: auto;
+    }
+
+    header {
+      padding-top: clamp(1.5rem, 4vw, 3rem);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: .9rem;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      width: 2.5rem;
+      height: 2.75rem;
+      color: var(--accent-deep);
+      flex: none;
+    }
+
+    .brand-name {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(1.35rem, 2.2vw, 2rem);
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+
+    main {
+      display: flex;
+      align-items: center;
+      padding-block: clamp(4rem, 10vh, 8rem);
+    }
+
+    .hero {
+      width: min(100%, 57rem);
+    }
+
+    h1 {
+      max-width: 11ch;
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(4.4rem, 10vw, 9.2rem);
+      font-weight: 700;
+      line-height: .86;
+      letter-spacing: -.065em;
+      text-wrap: balance;
+    }
+
+    .availability {
+      margin: clamp(2rem, 5vw, 3.5rem) 0 0;
+      color: var(--accent);
+      font-size: clamp(2.1rem, 5vw, 4.6rem);
+      font-weight: 750;
+      line-height: 1;
+      letter-spacing: -.045em;
+    }
+
+    .description {
+      max-width: 46rem;
+      margin: 1.25rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.7vw, 1.35rem);
+      line-height: 1.6;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      width: min(100%, 47rem);
+      margin-top: clamp(2rem, 5vw, 3.4rem);
+      padding: 1.25rem 1.5rem;
+      border: 1px solid var(--surface-border);
+      border-radius: .65rem;
+      background: var(--surface);
+      box-shadow: 0 1.25rem 4rem rgb(0 0 0 / 16%);
+    }
+
+    .status-icon {
+      display: grid;
+      flex: none;
+      width: 3rem;
+      height: 3rem;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--background-deep);
+    }
+
+    .status-icon svg {
+      width: 1.35rem;
+      height: 1.35rem;
+    }
+
+    .status-text {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    footer {
+      padding-bottom: clamp(1.5rem, 4vw, 3rem);
+    }
+
+    .footer-line {
+      height: 1px;
+      margin-bottom: 1.25rem;
+      background: var(--line);
+    }
+
+    .copyright {
+      margin: 0;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        width: min(100% - 2rem, 84rem);
+      }
+
+      .contours {
+        top: 7rem;
+        right: -20rem;
+        width: 52rem;
+        opacity: .11;
+      }
+
+      main {
+        align-items: flex-start;
+        padding-block: 5.5rem 4rem;
+      }
+
+      h1 {
+        font-size: clamp(3.7rem, 19vw, 5.5rem);
+      }
+
+      .availability {
+        max-width: 10ch;
+        font-size: clamp(2.2rem, 11vw, 3.25rem);
+      }
+
+      .status {
+        align-items: flex-start;
+        padding: 1.1rem;
+      }
+
+      .status-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .status-icon {
+        animation: ready 700ms ease-out both;
+      }
+
+      @keyframes ready {
+        from {
+          opacity: 0;
+          transform: scale(.72);
+        }
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <svg class="contours" viewBox="0 0 900 900" fill="none" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="1.5">
+        <path d="M880 144C741 46 559 39 430 130C300 222 327 366 217 440C108 514 21 471-70 414"/>
+        <path d="M902 188C756 91 587 88 470 168C352 249 373 377 266 460C159 542 51 512-50 457"/>
+        <path d="M921 232C778 140 615 136 511 210C406 284 422 397 316 481C210 566 91 552-32 500"/>
+        <path d="M940 279C798 191 644 184 552 251C458 319 470 417 367 504C262 591 132 590-12 545"/>
+        <path d="M956 328C817 242 676 232 594 292C509 354 516 438 418 526C318 616 174 629 10 590"/>
+        <path d="M971 380C838 294 709 281 636 334C560 390 562 460 469 548C374 639 218 668 31 635"/>
+        <path d="M982 435C858 348 742 332 677 378C609 426 610 484 520 571C429 661 264 706 54 681"/>
+        <path d="M989 493C879 405 778 386 720 425C659 466 657 510 570 594C483 679 310 744 79 726"/>
+        <path d="M991 554C902 465 815 442 764 474C709 508 704 539 622 616C539 694 360 780 105 771"/>
+        <path d="M986 618C927 530 855 503 810 527C761 554 751 574 675 639C598 704 413 816 134 816"/>
+        <path d="M974 684C954 598 898 567 857 582C812 599 798 612 729 663C659 714 469 849 166 860"/>
+      </g>
+      <g stroke="currentColor" stroke-width="2" opacity=".65">
+        <ellipse cx="714" cy="476" rx="55" ry="76"/>
+        <ellipse cx="714" cy="476" rx="107" ry="143"/>
+        <ellipse cx="714" cy="476" rx="161" ry="211"/>
+        <ellipse cx="714" cy="476" rx="218" ry="279"/>
+      </g>
+    </svg>
+
+    <header class="container">
+      <a class="brand" href="/" aria-label="Kedr Works — главная">
+        <svg class="brand-mark" viewBox="0 0 48 54" fill="none" aria-hidden="true">
+          <path d="M24 3v47M24 11 9 23m15-12 15 12M24 22 5 37m19-15 19 15M24 33 2 51m22-18 22 18"
+            stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-name">Kedr Works</span>
+      </a>
+    </header>
+
+    <main class="container">
+      <section class="hero" aria-labelledby="page-title">
+        <h1 id="page-title">Kedr Works</h1>
+        <p class="availability">Сервис доступен</p>
+        <p class="description">Инфраструктурные сервисы работают в штатном режиме.</p>
+
+        <div class="status" role="status" aria-live="polite">
+          <span class="status-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="m5 12.5 4.2 4.2L19 7" stroke="currentColor" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="status-text">Все системы работают нормально</span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="container">
+      <div class="footer-line"></div>
+      <p class="copyright">© 2026 Kedr Works</p>
+    </footer>
+  </div>
+</body>
+</html>

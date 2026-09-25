@@ -1,0 +1,48 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ remnawave_node_reality_domain }};
+
+    root {{ remnawave_node_reality_site_dir }};
+
+    location ^~ /.well-known/acme-challenge/ {
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+{% if remnawave_node_reality_certificate_present | bool %}
+
+server {
+    listen unix:{{ remnawave_node_reality_socket }} ssl proxy_protocol{% if remnawave_node_reality_nginx_legacy_http2 | bool %} http2{% endif %};
+    server_name {{ remnawave_node_reality_domain }};
+
+{% if not remnawave_node_reality_nginx_legacy_http2 | bool %}
+    http2 on;
+{% endif %}
+    real_ip_header proxy_protocol;
+
+    ssl_certificate /etc/letsencrypt/live/{{ remnawave_node_reality_domain }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ remnawave_node_reality_domain }}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/{{ remnawave_node_reality_domain }}/chain.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:RemnanodeRealitySSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    root {{ remnawave_node_reality_site_dir }};
+    index index.html;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+{% endif %}

@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: remnawave_panel
+  author: infrastructure
+  description: Deploy Remnawave control plane with TLS reverse proxy
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+
+dependencies:
+  - role: docker

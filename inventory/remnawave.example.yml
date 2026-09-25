@@ -1,0 +1,37 @@
+---
+all:
+  vars:
+    ansible_user: root
+    # Prefer SSH keys. Example:
+    # ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+
+  children:
+    remnawave_control:
+      hosts:
+        control-1:
+          ansible_host: 203.0.113.10
+          remnawave_panel_domain: panel.example.com
+          remnawave_panel_expected_ipv4: 203.0.113.10
+          remnawave_panel_acme_email: admin@example.com
+
+          # Optional production pins/overrides:
+          # remnawave_panel_backend_image: remnawave/backend:3
+          # remnawave_panel_postgres_image: postgres:18.4
+          # remnawave_panel_valkey_image: valkey/valkey:9-alpine
+
+    remnawave_nodes:
+      hosts:
+        node-1:
+          ansible_host: 203.0.113.20
+          remnawave_node_port: 2222
+          remnawave_node_reality_nginx_enabled: true
+          remnawave_node_reality_domain: static-1.example.com
+          remnawave_node_reality_expected_ipv4: 203.0.113.20
+          remnawave_node_reality_acme_email: admin@example.com
+          # Unique value copied from Panel -> Nodes -> Management.
+          remnawave_node_secret: "PASTE_SECRET_KEY_FROM_PANEL_HERE"
+
+        node-2:
+          ansible_host: 203.0.113.21
+          remnawave_node_port: 2222
+          remnawave_node_secret: "PASTE_ANOTHER_UNIQUE_SECRET_KEY_HERE"

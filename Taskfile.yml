@@ -26,6 +26,20 @@ tasks:
         vars:
           TAGS: sni_finder
 
+  remnawave-control:
+    desc: Deploy the Remnawave control plane
+    vars:
+      INVENTORY: '{{.INVENTORY | default "inventory/remnawave.yml"}}'
+    cmds:
+      - ansible-playbook -i "{{.INVENTORY}}" remnawave.yml --limit remnawave_control
+
+  remnawave-nodes:
+    desc: Deploy all Remnawave data plane nodes
+    vars:
+      INVENTORY: '{{.INVENTORY | default "inventory/remnawave.yml"}}'
+    cmds:
+      - ansible-playbook -i "{{.INVENTORY}}" remnawave.yml --limit remnawave_nodes
+
   new:
     desc: Create a new Ansible role with ansible-galaxy role init name=<role_name>
     preconditions:

@@ -1,0 +1,18 @@
+---
+- name: Deploy Remnawave control plane
+  hosts: remnawave_control
+  become: true
+  roles:
+    - role: remnawave_panel
+      tags:
+        - remnawave
+        - remnawave_control
+
+- name: Deploy Remnawave data plane nodes
+  hosts: remnawave_nodes
+  become: true
+  roles:
+    - role: remnawave_node
+      tags:
+        - remnawave
+        - remnawave_nodes

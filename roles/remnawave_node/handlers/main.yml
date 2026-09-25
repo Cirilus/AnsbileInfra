@@ -1,0 +1,6 @@
+---
+- name: Reload Remnawave Reality Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  listen: Reload Remnawave Reality Nginx

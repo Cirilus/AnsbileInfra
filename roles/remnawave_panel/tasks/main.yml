@@ -1,0 +1,250 @@
+---
+- name: Validate Remnawave Panel configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+      - remnawave_panel_domain | length > 3
+      - remnawave_panel_domain is match('^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$')
+      - remnawave_panel_acme_email | length > 3
+      - "'@' in remnawave_panel_acme_email"
+      - remnawave_panel_app_port | int > 0
+      - remnawave_panel_metrics_port | int > 0
+    fail_msg: >-
+      Remnawave Panel requires Debian/Ubuntu, a bare DNS name in
+      remnawave_panel_domain and a valid remnawave_panel_acme_email.
+
+- name: Resolve Panel domain before making changes
+  ansible.builtin.command:
+    argv:
+      - getent
+      - ahostsv4
+      - "{{ remnawave_panel_domain }}"
+  register: remnawave_panel_dns
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Verify Panel DNS points to this control plane
+  ansible.builtin.assert:
+    that:
+      - remnawave_panel_dns.rc == 0
+      - remnawave_panel_expected_ipv4 in remnawave_panel_dns.stdout.split()
+    fail_msg: >-
+      Create an A record for {{ remnawave_panel_domain }} pointing to
+      {{ remnawave_panel_expected_ipv4 }} and wait for public DNS propagation
+      before running this role.
+
+- name: Install control-plane packages
+  ansible.builtin.apt:
+    name:
+      - certbot
+      - nginx
+      - openssl
+      - python3-certbot-nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure Remnawave directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ remnawave_panel_dir }}"
+      mode: "0750"
+    - path: "{{ remnawave_panel_secrets_dir }}"
+      mode: "0700"
+
+- name: Resolve persistent Remnawave secrets
+  ansible.builtin.include_tasks: load_secret.yml
+  loop:
+    - name: app_secret
+      fact: remnawave_effective_app_secret
+      bytes: 64
+      override: "{{ remnawave_panel_app_secret }}"
+    - name: metrics_password
+      fact: remnawave_effective_metrics_password
+      bytes: 64
+      override: "{{ remnawave_panel_metrics_password }}"
+    - name: webhook_secret
+      fact: remnawave_effective_webhook_secret
+      bytes: 32
+      override: "{{ remnawave_panel_webhook_secret }}"
+    - name: postgres_password
+      fact: remnawave_effective_postgres_password
+      bytes: 24
+      override: "{{ remnawave_panel_postgres_password }}"
+  loop_control:
+    loop_var: remnawave_secret
+    label: "{{ remnawave_secret.name }}"
+
+- name: Render Remnawave Panel environment
+  ansible.builtin.template:
+    src: remnawave.env.j2
+    dest: "{{ remnawave_panel_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Render Remnawave Panel Compose project
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ remnawave_panel_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Validate Remnawave Panel Compose project
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - config
+      - --quiet
+    chdir: "{{ remnawave_panel_dir }}"
+  changed_when: false
+  no_log: true
+
+- name: Pull Remnawave Panel images
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - pull
+    chdir: "{{ remnawave_panel_dir }}"
+  changed_when: false
+  when: remnawave_panel_pull_images | bool
+  no_log: true
+
+- name: Start Remnawave Panel
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - up
+      - --detach
+      - --remove-orphans
+    chdir: "{{ remnawave_panel_dir }}"
+  register: remnawave_panel_compose_up
+  changed_when: >-
+    'Created' in (remnawave_panel_compose_up.stdout ~ remnawave_panel_compose_up.stderr)
+    or 'Started' in (remnawave_panel_compose_up.stdout ~ remnawave_panel_compose_up.stderr)
+    or 'Recreated' in (remnawave_panel_compose_up.stdout ~ remnawave_panel_compose_up.stderr)
+
+- name: Wait for Remnawave Panel health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ remnawave_panel_metrics_host_port }}/health"
+    method: GET
+    status_code: 200
+  register: remnawave_panel_health
+  retries: 20
+  delay: 3
+  until: remnawave_panel_health.status == 200
+
+- name: Disable the default Nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Check existing Panel certificate
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ remnawave_panel_domain }}/fullchain.pem"
+  register: remnawave_panel_certificate
+
+- name: Install temporary HTTP reverse proxy for ACME validation
+  ansible.builtin.template:
+    src: nginx-bootstrap.conf.j2
+    dest: "{{ remnawave_panel_nginx_site_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not remnawave_panel_certificate.stat.exists
+
+- name: Enable Remnawave Nginx site
+  ansible.builtin.file:
+    src: "{{ remnawave_panel_nginx_site_path }}"
+    dest: /etc/nginx/sites-enabled/remnawave.conf
+    state: link
+    force: true
+
+- name: Validate bootstrap Nginx configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/nginx
+      - -t
+  changed_when: false
+  when: not remnawave_panel_certificate.stat.exists
+
+- name: Start Nginx for ACME validation
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+    enabled: true
+  when: not remnawave_panel_certificate.stat.exists
+
+- name: Issue Let's Encrypt certificate for Remnawave Panel
+  ansible.builtin.command:
+    argv:
+      - certbot
+      - certonly
+      - --nginx
+      - --non-interactive
+      - --agree-tos
+      - --keep-until-expiring
+      - --email
+      - "{{ remnawave_panel_acme_email }}"
+      - --domain
+      - "{{ remnawave_panel_domain }}"
+      - --deploy-hook
+      - systemctl reload nginx
+  args:
+    creates: "/etc/letsencrypt/live/{{ remnawave_panel_domain }}/fullchain.pem"
+
+- name: Install TLS Nginx reverse proxy
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ remnawave_panel_nginx_site_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: remnawave_panel_nginx_config
+
+- name: Validate final Nginx configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/nginx
+      - -t
+  changed_when: false
+
+- name: Ensure Nginx is enabled and reload configuration
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+    enabled: true
+
+- name: Verify Remnawave Panel over HTTPS
+  ansible.builtin.uri:
+    url: "https://{{ remnawave_panel_domain }}/"
+    method: GET
+    follow_redirects: all
+    validate_certs: true
+    status_code:
+      - 200
+      - 401
+      - 403
+  register: remnawave_panel_https
+  retries: 10
+  delay: 3
+  until: remnawave_panel_https.status in [200, 401, 403]
+
+- name: Show Remnawave Panel deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "Remnawave Panel: https://{{ remnawave_panel_domain }}/"
+      - "Subscription endpoint prefix: https://{{ remnawave_panel_subscription_public_domain }}"
+      - "Persistent generated secrets: {{ remnawave_panel_secrets_dir }}"
+      - "Create every data-plane node in Nodes -> Management, then copy its unique SECRET_KEY into the inventory."

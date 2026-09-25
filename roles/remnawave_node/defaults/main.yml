@@ -1,0 +1,23 @@
+---
+remnawave_node_dir: /opt/remnanode
+remnawave_node_image: remnawave/node:latest
+remnawave_node_pull_images: true
+remnawave_node_port: 2222
+remnawave_node_secret: ""
+
+remnawave_node_enable_logs: true
+remnawave_node_logs_dir: /var/log/remnanode
+remnawave_node_logrotate_size: 50M
+remnawave_node_logrotate_count: 5
+
+# Local TLS endpoint used as a Reality target. Xray continues to own the
+# public 443/TCP port and forwards fallback traffic to this Unix socket.
+remnawave_node_reality_nginx_enabled: false
+remnawave_node_reality_domain: ""
+remnawave_node_reality_expected_ipv4: "{{ ansible_host | default(ansible_default_ipv4.address | default('')) }}"
+remnawave_node_reality_socket: /dev/shm/nginx.sock
+remnawave_node_reality_site_dir: /var/www/remnanode-reality
+remnawave_node_reality_nginx_site_path: /etc/nginx/sites-available/remnanode-reality.conf
+remnawave_node_reality_acme_email: ""
+# Nginx < 1.25.1 enables HTTP/2 with the listen parameter.
+remnawave_node_reality_nginx_legacy_http2: false

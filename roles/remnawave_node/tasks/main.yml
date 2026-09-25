@@ -1,0 +1,364 @@
+---
+- name: Validate Remnawave Node secret
+  ansible.builtin.assert:
+    that:
+      - remnawave_node_secret | length > 32
+      - remnawave_node_secret != "PASTE_SECRET_KEY_FROM_PANEL_HERE"
+      - remnawave_node_secret != "PASTE_ANOTHER_UNIQUE_SECRET_KEY_HERE"
+    fail_msg: >-
+      Set a unique remnawave_node_secret copied from
+      Panel -> Nodes -> Management for {{ inventory_hostname }}.
+  no_log: true
+
+- name: Validate Remnawave Node configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+      - remnawave_node_port | int > 0
+      - remnawave_node_port | int < 65536
+    fail_msg: Remnawave Node requires Debian/Ubuntu and a valid API port.
+
+- name: Validate local Reality Nginx configuration
+  ansible.builtin.assert:
+    that:
+      - remnawave_node_reality_domain | length > 3
+      - remnawave_node_reality_domain is match('^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$')
+      - remnawave_node_reality_acme_email | length > 3
+      - "'@' in remnawave_node_reality_acme_email"
+      - remnawave_node_reality_socket is match('^/')
+      - remnawave_node_reality_expected_ipv4 | length > 0
+    fail_msg: >-
+      Reality Nginx requires a bare DNS name, ACME email, absolute Unix
+      socket path and expected public IPv4 address.
+  when: remnawave_node_reality_nginx_enabled | bool
+
+- name: Resolve Reality domain before making changes
+  ansible.builtin.command:
+    argv:
+      - getent
+      - ahostsv4
+      - "{{ remnawave_node_reality_domain }}"
+  register: remnawave_node_reality_dns
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: remnawave_node_reality_nginx_enabled | bool
+
+- name: Verify Reality DNS points to this node
+  ansible.builtin.assert:
+    that:
+      - remnawave_node_reality_dns.rc == 0
+      - remnawave_node_reality_expected_ipv4 in remnawave_node_reality_dns.stdout.split()
+    fail_msg: >-
+      Create an A record for {{ remnawave_node_reality_domain }} pointing to
+      {{ remnawave_node_reality_expected_ipv4 }} and wait for public DNS
+      propagation before running this role.
+  when: remnawave_node_reality_nginx_enabled | bool
+
+- name: Install Node runtime packages
+  ansible.builtin.apt:
+    name:
+      - logrotate
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install local Reality Nginx and ACME packages
+  ansible.builtin.apt:
+    name:
+      - certbot
+      - nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: remnawave_node_reality_nginx_enabled | bool
+
+- name: Ensure Remnawave Node project directory exists
+  ansible.builtin.file:
+    path: "{{ remnawave_node_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Ensure Remnawave Node log directory exists
+  ansible.builtin.file:
+    path: "{{ remnawave_node_logs_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  when: remnawave_node_enable_logs | bool
+
+- name: Configure local TLS endpoint for Reality
+  when: remnawave_node_reality_nginx_enabled | bool
+  block:
+    - name: Ensure Reality landing-page directory exists
+      ansible.builtin.file:
+        path: "{{ remnawave_node_reality_site_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install Reality landing page
+      ansible.builtin.template:
+        src: reality-index.html
+        dest: "{{ remnawave_node_reality_site_dir }}/index.html"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install robots policy
+      ansible.builtin.template:
+        src: reality-robots.txt.j2
+        dest: "{{ remnawave_node_reality_site_dir }}/robots.txt"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Disable the default Nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Check existing Reality certificate
+      ansible.builtin.stat:
+        path: "/etc/letsencrypt/live/{{ remnawave_node_reality_domain }}/fullchain.pem"
+      register: remnawave_node_reality_certificate
+
+    - name: Record initial Reality certificate state
+      ansible.builtin.set_fact:
+        remnawave_node_reality_certificate_present: >-
+          {{ remnawave_node_reality_certificate.stat.exists | bool }}
+
+    - name: Render bootstrap Reality Nginx site
+      ansible.builtin.template:
+        src: nginx-reality.conf.j2
+        dest: "{{ remnawave_node_reality_nginx_site_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: remnawave_node_reality_bootstrap_config
+
+    - name: Enable Reality Nginx site
+      ansible.builtin.file:
+        src: "{{ remnawave_node_reality_nginx_site_path }}"
+        dest: /etc/nginx/sites-enabled/remnanode-reality.conf
+        state: link
+        force: true
+      register: remnawave_node_reality_site_link
+
+    - name: Validate bootstrap Nginx configuration
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/nginx
+          - -t
+      changed_when: false
+
+    - name: Ensure Nginx is enabled and started
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Reload changed bootstrap Nginx configuration
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      when: >-
+        remnawave_node_reality_bootstrap_config.changed
+        or remnawave_node_reality_site_link.changed
+
+    - name: Wait for the ACME HTTP endpoint
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 80
+        state: started
+        timeout: 30
+
+    - name: Issue Let's Encrypt certificate for Reality endpoint
+      ansible.builtin.command:
+        argv:
+          - certbot
+          - certonly
+          - --webroot
+          - --webroot-path
+          - "{{ remnawave_node_reality_site_dir }}"
+          - --non-interactive
+          - --agree-tos
+          - --no-eff-email
+          - --keep-until-expiring
+          - --preferred-challenges
+          - http-01
+          - --email
+          - "{{ remnawave_node_reality_acme_email }}"
+          - --domain
+          - "{{ remnawave_node_reality_domain }}"
+      register: remnawave_node_reality_certbot_issue
+      when: not remnawave_node_reality_certificate_present | bool
+      changed_when: true
+
+    - name: Recheck Reality certificate
+      ansible.builtin.stat:
+        path: "/etc/letsencrypt/live/{{ remnawave_node_reality_domain }}/fullchain.pem"
+      register: remnawave_node_reality_certificate_after_issue
+
+    - name: Verify Reality certificate was issued
+      ansible.builtin.assert:
+        that:
+          - remnawave_node_reality_certificate_after_issue.stat.exists
+        fail_msg: >-
+          Certbot did not create a certificate for
+          {{ remnawave_node_reality_domain }}.
+
+    - name: Enable TLS Unix-socket server
+      ansible.builtin.set_fact:
+        remnawave_node_reality_certificate_present: true
+
+    - name: Render final Reality Nginx site
+      ansible.builtin.template:
+        src: nginx-reality.conf.j2
+        dest: "{{ remnawave_node_reality_nginx_site_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: remnawave_node_reality_final_config
+
+    - name: Install Certbot Nginx deploy hook
+      ansible.builtin.template:
+        src: certbot-nginx-reload.sh.j2
+        dest: /etc/letsencrypt/renewal-hooks/deploy/remnanode-nginx-reload
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Validate final Nginx configuration
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/nginx
+          - -t
+      changed_when: false
+
+    - name: Reload final Reality Nginx configuration
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      when: >-
+        remnawave_node_reality_final_config.changed
+        or remnawave_node_reality_certbot_issue is changed
+
+    - name: Enable automatic certificate renewal
+      ansible.builtin.systemd_service:
+        name: certbot.timer
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Wait for Reality Unix socket
+      ansible.builtin.wait_for:
+        path: "{{ remnawave_node_reality_socket }}"
+        state: present
+        timeout: 30
+
+    - name: Verify TLS and HTTP through the PROXY-protocol Unix socket
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import socket
+            import ssl
+
+            raw = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            raw.settimeout(10)
+            raw.connect("{{ remnawave_node_reality_socket }}")
+            raw.sendall(b"PROXY TCP4 127.0.0.1 127.0.0.1 12345 443\r\n")
+            context = ssl.create_default_context()
+            with context.wrap_socket(
+                raw,
+                server_hostname="{{ remnawave_node_reality_domain }}",
+            ) as tls:
+                tls.sendall(
+                    b"GET / HTTP/1.1\r\n"
+                    b"Host: {{ remnawave_node_reality_domain }}\r\n"
+                    b"Connection: close\r\n\r\n"
+                )
+                response = tls.recv(64)
+                if not response.startswith(b"HTTP/1.1 200"):
+                    raise SystemExit(
+                        "Unexpected response: " + response.decode(errors="replace")
+                    )
+      changed_when: false
+
+- name: Render Remnawave Node Compose project
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ remnawave_node_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install Remnawave Node log rotation
+  ansible.builtin.template:
+    src: remnanode.logrotate.j2
+    dest: /etc/logrotate.d/remnanode
+    owner: root
+    group: root
+    mode: "0644"
+  when: remnawave_node_enable_logs | bool
+
+- name: Validate Remnawave Node Compose project
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - config
+      - --quiet
+    chdir: "{{ remnawave_node_dir }}"
+  changed_when: false
+  no_log: true
+
+- name: Pull Remnawave Node image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - pull
+    chdir: "{{ remnawave_node_dir }}"
+  changed_when: false
+  when: remnawave_node_pull_images | bool
+  no_log: true
+
+- name: Start Remnawave Node
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - up
+      - --detach
+      - --remove-orphans
+    chdir: "{{ remnawave_node_dir }}"
+  register: remnawave_node_compose_up
+  changed_when: >-
+    'Created' in (remnawave_node_compose_up.stdout ~ remnawave_node_compose_up.stderr)
+    or 'Started' in (remnawave_node_compose_up.stdout ~ remnawave_node_compose_up.stderr)
+    or 'Recreated' in (remnawave_node_compose_up.stdout ~ remnawave_node_compose_up.stderr)
+  no_log: true
+
+- name: Wait for Remnawave Node API port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ remnawave_node_port }}"
+    state: started
+    timeout: 60
+
+- name: Show Remnawave Node deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "Remnawave Node is running on {{ inventory_hostname }}:{{ remnawave_node_port }}."
+      - "Reality SNI: {{ remnawave_node_reality_domain if remnawave_node_reality_nginx_enabled else 'disabled' }}."
+      - "Reality target: {{ remnawave_node_reality_socket if remnawave_node_reality_nginx_enabled else 'disabled' }}."
+      - "Allow the Node API port only from the control-plane IP."
+      - "Open client-facing Xray inbound ports separately."
